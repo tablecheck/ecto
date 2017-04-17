@@ -2,6 +2,15 @@ defmodule Ecto.ChangesetTest do
   use ExUnit.Case, async: true
   import Ecto.Changeset
 
+  defmodule Category do
+    use Ecto.Schema
+
+    schema "categories" do
+      field :name, :string
+      has_many :posts, Ecto.ChangesetTest.Post
+    end
+  end
+
   defmodule Comment do
     use Ecto.Schema
 
@@ -22,6 +31,9 @@ defmodule Ecto.ChangesetTest do
       field :topics, {:array, :string}
       field :virtual, :string, virtual: true
       field :published_at, :naive_datetime
+      field :permalink, :string, source: :url
+      field :category_id, :integer, source: :cat_id
+      belongs_to :category, Ecto.ChangesetTest.Category, define_field: false#, foreign_key: :category_id
       has_many :comments, Ecto.ChangesetTest.Comment, on_replace: :delete
       has_one :comment, Ecto.ChangesetTest.Comment
     end
@@ -991,6 +1003,26 @@ defmodule Ecto.ChangesetTest do
     end
   end
 
+  test "unique_constraint/3 on field with :source" do
+    changeset = change(%Post{}) |> unique_constraint(:permalink)
+
+    assert changeset.constraints ==
+           [%{type: :unique, field: :permalink, constraint: "posts_url_index", match: :exact,
+              error: {"has already been taken", []}}]
+
+    changeset = change(%Post{}) |> unique_constraint(:permalink, name: :whatever, message: "is taken")
+    assert changeset.constraints ==
+           [%{type: :unique, field: :permalink, constraint: "whatever", match: :exact, error: {"is taken", []}}]
+
+    changeset = change(%Post{}) |> unique_constraint(:permalink, name: :whatever, match: :suffix, message: "is taken")
+    assert changeset.constraints ==
+           [%{type: :unique, field: :permalink, constraint: "whatever", match: :suffix, error: {"is taken", []}}]
+
+    assert_raise ArgumentError, ~r/invalid match type: :invalid/, fn ->
+      change(%Post{}) |> unique_constraint(:permalink, name: :whatever, match: :invalid, message: "is taken")
+    end
+  end
+
   test "foreign_key_constraint/3" do
     changeset = change(%Comment{}) |> foreign_key_constraint(:post_id)
     assert changeset.constraints ==
@@ -1002,6 +1034,17 @@ defmodule Ecto.ChangesetTest do
            [%{type: :foreign_key, field: :post_id, constraint: "whatever", match: :exact, error: {"is not available", []}}]
   end
 
+  test "foreign_key_constraint/3 on field with :source" do
+    changeset = change(%Post{}) |> foreign_key_constraint(:permalink)
+    assert changeset.constraints ==
+           [%{type: :foreign_key, field: :permalink, constraint: "posts_url_fkey", match: :exact,
+              error: {"does not exist", []}}]
+
+    changeset = change(%Post{}) |> foreign_key_constraint(:permalink, name: :whatever, message: "is not available")
+    assert changeset.constraints ==
+           [%{type: :foreign_key, field: :permalink, constraint: "whatever", match: :exact, error: {"is not available", []}}]
+  end
+
   test "assoc_constraint/3" do
     changeset = change(%Comment{}) |> assoc_constraint(:post)
     assert changeset.constraints ==
@@ -1011,6 +1054,17 @@ defmodule Ecto.ChangesetTest do
     changeset = change(%Comment{}) |> assoc_constraint(:post, name: :whatever, message: "is not available")
     assert changeset.constraints ==
            [%{type: :foreign_key, field: :post, constraint: "whatever", match: :exact, error: {"is not available", []}}]
+  end
+
+  test "assoc_constraint/3 on field with :source" do
+    changeset = change(%Post{}) |> assoc_constraint(:category)
+    assert changeset.constraints ==
+           [%{type: :foreign_key, field: :category, constraint: "posts_category_id_fkey", match: :exact,
+              error: {"does not exist", []}}]
+
+    changeset = change(%Post{}) |> assoc_constraint(:category, name: :whatever, message: "is not available")
+    assert changeset.constraints ==
+           [%{type: :foreign_key, field: :category, constraint: "whatever", match: :exact, error: {"is not available", []}}]
   end
 
   test "assoc_constraint/3 with errors" do

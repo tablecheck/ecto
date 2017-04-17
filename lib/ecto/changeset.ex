@@ -1893,7 +1893,7 @@ defmodule Ecto.Changeset do
   """
   @spec unique_constraint(t, atom, Keyword.t) :: t
   def unique_constraint(changeset, field, opts \\ []) do
-    constraint = opts[:name] || "#{get_source(changeset)}_#{field}_index"
+    constraint = opts[:name] || "#{get_source(changeset)}_#{get_field_source(changeset, field)}_index"
     message    = message(opts, "has already been taken")
     match_type = Keyword.get(opts, :match, :exact)
     add_constraint(changeset, :unique, to_string(constraint), match_type, field, {message, []})
@@ -1941,7 +1941,7 @@ defmodule Ecto.Changeset do
   """
   @spec foreign_key_constraint(t, atom, Keyword.t) :: t
   def foreign_key_constraint(changeset, field, opts \\ []) do
-    constraint = opts[:name] || "#{get_source(changeset)}_#{field}_fkey"
+    constraint = opts[:name] || "#{get_source(changeset)}_#{get_field_source(changeset, field)}_fkey"
     message    = message(opts, "does not exist")
     add_constraint(changeset, :foreign_key, to_string(constraint), :exact, field, {message, []})
   end
@@ -2065,7 +2065,7 @@ defmodule Ecto.Changeset do
 
   """
   def exclusion_constraint(changeset, field, opts \\ []) do
-    constraint = opts[:name] || "#{get_source(changeset)}_#{field}_exclusion"
+    constraint = opts[:name] || "#{get_source(changeset)}_#{get_field_source(changeset, field)}_exclusion"
     message    = message(opts, "violates an exclusion constraint")
     match_type = Keyword.get(opts, :match, :exact)
     add_constraint(changeset, :exclude, to_string(constraint), match_type, field, {message, []})
@@ -2085,6 +2085,11 @@ defmodule Ecto.Changeset do
   defp get_source(%{data: %{__meta__: %{source: {_prefix, source}}}}) when is_binary(source),
     do: source
   defp get_source(%{data: data}), do:
+    raise(ArgumentError, "cannot add constraint to changeset because it does not have a source, got: #{inspect data}")
+
+  defp get_field_source(%{data: %{__struct__: schema}}, field) when is_atom(schema),
+    do: schema.__schema__(:source, field) || field
+  defp get_field_source(%{data: data}, _field), do:
     raise(ArgumentError, "cannot add constraint to changeset because it does not have a source, got: #{inspect data}")
 
   defp get_assoc(%{data: %{__struct__: schema}}, assoc) do
