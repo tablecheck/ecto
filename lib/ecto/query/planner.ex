@@ -580,7 +580,7 @@ defmodule Ecto.Query.Planner do
   end
 
   defp aliases_list(%{sources: sources}) do
-    Enum.map(Tuple.to_list(sources), fn({source, schema}) ->
+    Enum.map(Tuple.to_list(sources), fn({_, schema}) ->
       schema.__schema__(:aliases)
     end)
   end

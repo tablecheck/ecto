@@ -1367,6 +1367,17 @@ defmodule Ecto.Schema do
   defp type_to_module(:utc_datetime), do: DateTime
   defp type_to_module(other), do: other
 
+  defp replace_field_sources(fields = %{}, aliases) do
+    Enum.reduce(fields, %{}, fn
+      {field, value}, acc ->
+        field_name = case List.keyfind(aliases, String.to_atom(field), 1) do
+                       {aliased, _} -> to_string(aliased)
+                       nil -> field
+                     end
+
+        Map.put(acc, field_name, value)
+    end)
+  end
   defp replace_field_sources({fields, values}, aliases) do
     {replace_field_sources(fields, [], aliases), values}
   end
@@ -1378,19 +1389,8 @@ defmodule Ecto.Schema do
 
     replace_field_sources(fields, list ++ [field], aliases)
   end
-  defp replace_field_sources([], list, aliases) do
+  defp replace_field_sources([], list, _aliases) do
     list
-  end
-  defp replace_field_sources(fields = %{}, aliases) do
-    Enum.reduce(fields, %{}, fn
-      {field, value}, acc ->
-        field_name = case List.keyfind(aliases, String.to_atom(field), 1) do
-                       {aliased, _} -> to_string(aliased)
-                       nil -> field
-                     end
-
-        Map.put(acc, field_name, value)
-    end)
   end
 
   @doc false
