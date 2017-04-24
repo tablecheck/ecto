@@ -588,10 +588,13 @@ defmodule Ecto.Query.Planner do
   defp rewrite_aliases(query) do
     aliases = aliases_list(query)
 
-    %{wheres: wheres, havings: havings} = query
-
-    %{query | wheres: rewrite_aliases(wheres, aliases),
-              havings: rewrite_aliases(havings, aliases)}
+    %{query | select: rewrite_aliases(query.distinct, aliases),
+              distinct: rewrite_aliases(query.distinct, aliases),
+              wheres: rewrite_aliases(query.wheres, aliases),
+              havings: rewrite_aliases(query.havings, aliases),
+              updates: rewrite_aliases(query.updates, aliases),
+              group_bys: rewrite_aliases(query.group_bys, aliases),
+              order_bys: rewrite_aliases(query.order_bys, aliases)}
   end
   defp rewrite_aliases(exprs, aliases) when is_list(exprs) do
     Enum.map(exprs, fn(expr) -> rewrite_aliases(expr, aliases) end)
@@ -601,7 +604,6 @@ defmodule Ecto.Query.Planner do
   end
   defp rewrite_aliases({{:., [], [{:&, [], [binding]}, field]}, [], []}, aliases) do
     field_name = Enum.at(aliases, binding)[field] || field
-
     {{:., [], [{:&, [], [binding]}, field_name]}, [], []}
   end
   defp rewrite_aliases(other, _) do
