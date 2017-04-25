@@ -579,22 +579,32 @@ defmodule Ecto.Query.Planner do
     end
   end
 
-  defp aliases_list(%{sources: sources}) do
-    Enum.map(Tuple.to_list(sources), fn({_, schema}) ->
-      schema.__schema__(:aliases)
-    end)
+  def aliases(%{sources: sources}) do
+    sources
+    |> Tuple.to_list
+    |> Enum.map(fn(source) -> aliases(source) end)
+  end
+  def aliases({_, schema}) when not is_nil(schema) do
+    schema.__schema__(:aliases)
+  end
+  def aliases(query) do
+    []
   end
 
   defp rewrite_aliases(query) do
-    aliases = aliases_list(query)
+    aliases = aliases(query)
 
-    %{query | select: rewrite_aliases(query.select, aliases),
-              distinct: rewrite_aliases(query.distinct, aliases),
-              wheres: rewrite_aliases(query.wheres, aliases),
-              havings: rewrite_aliases(query.havings, aliases),
-              updates: rewrite_aliases(query.updates, aliases),
-              group_bys: rewrite_aliases(query.group_bys, aliases),
-              order_bys: rewrite_aliases(query.order_bys, aliases)}
+    if Enum.any?(List.flatten(aliases)) do
+      %{query | select: rewrite_aliases(query.select, aliases),
+                distinct: rewrite_aliases(query.distinct, aliases),
+                wheres: rewrite_aliases(query.wheres, aliases),
+                havings: rewrite_aliases(query.havings, aliases),
+                updates: rewrite_aliases(query.updates, aliases),
+                group_bys: rewrite_aliases(query.group_bys, aliases),
+                order_bys: rewrite_aliases(query.order_bys, aliases)}
+    else
+      query
+    end
   end
   defp rewrite_aliases(exprs, aliases) when is_list(exprs) do
     Enum.map(exprs, fn(expr) -> rewrite_aliases(expr, aliases) end)
@@ -609,17 +619,26 @@ defmodule Ecto.Query.Planner do
   defp rewrite_aliases({field, tag = %Ecto.Query.Tagged{type: {binding, field}}}, aliases) do
     {Enum.at(aliases, binding)[field] || field, tag}
   end
+  defp rewrite_aliases({:ok, {op, fields}}, source = {_, schema}) when is_list(fields) and not is_nil(schema) do
+    aliases = schema.__schema__(:aliases)
+    fields = Enum.map(fields, fn(field) ->
+      case is_atom(field) do
+        true -> aliases[field] || field
+        false -> field
+      end
+    end)
+    {{:ok, {op, fields}}, source}
+  end
+  defp rewrite_aliases({:ok, {op, fields}}, source) do
+    {{:ok, {op, fields}}, source}
+  end
+  defp rewrite_aliases(:error, source) do
+    {:error, source}
+  end
   defp rewrite_aliases(other, _) do
     other
   end
-  defp rewrite_aliases_for_select({:ok, {op, fields}}, source = {_, schema}) when is_list(fields) do
-    aliases = schema.__schema__(:aliases)
-    fields = Enum.map(fields, fn(field) -> (aliases[field] || field) end)
-    {{:ok, {op, fields}}, source}
-  end
-  defp rewrite_aliases_for_select(fetched = {:error, _}, source) do
-    {fetched, source}
-  end
+
   defp find_source_expr(query, 0) do
     query.from
   end
@@ -936,7 +955,7 @@ defmodule Ecto.Query.Planner do
   end
 
   defp take!(source, query, fetched, field) do
-    case rewrite_aliases_for_select(fetched, source) do
+    case rewrite_aliases(fetched, source) do
       {{:ok, {:struct, _}}, {_, nil}} ->
         error! query, "struct/2 in select expects a source with a schema"
       {{:ok, {_, []}}, {_, _}} ->

@@ -1370,7 +1370,12 @@ defmodule Ecto.Schema do
   defp replace_field_sources(fields = %{}, aliases) do
     Enum.reduce(fields, %{}, fn
       {field, value}, acc ->
-        field_name = case List.keyfind(aliases, String.to_atom(field), 1) do
+        field = case is_atom(field) do
+                  true -> field
+                  false -> String.to_atom(field)
+                end
+
+        field_name = case List.keyfind(aliases, field, 1) do
                        {aliased, _} -> to_string(aliased)
                        nil -> field
                      end
