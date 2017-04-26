@@ -579,55 +579,32 @@ defmodule Ecto.Query.Planner do
     end
   end
 
-  def aliases(%{sources: sources}) do
-    sources
-    |> Tuple.to_list
-    |> Enum.map(fn(source) -> aliases(source) end)
-  end
-  def aliases({_, schema}) when not is_nil(schema) do
-    schema.__schema__(:aliases)
-  end
-  def aliases(query) do
-    []
-  end
-
   defp rewrite_aliases(query) do
-    aliases = aliases(query)
-
-    if Enum.any?(List.flatten(aliases)) do
-      %{query | select: rewrite_aliases(query.select, aliases),
-                distinct: rewrite_aliases(query.distinct, aliases),
-                wheres: rewrite_aliases(query.wheres, aliases),
-                havings: rewrite_aliases(query.havings, aliases),
-                updates: rewrite_aliases(query.updates, aliases),
-                group_bys: rewrite_aliases(query.group_bys, aliases),
-                order_bys: rewrite_aliases(query.order_bys, aliases)}
-    else
-      query
-    end
+    %{query | select: rewrite_aliases(:select, query),
+              distinct: rewrite_aliases(:distinct, query),
+              wheres: rewrite_aliases(:wheres, query),
+              havings: rewrite_aliases(:havings, query),
+              updates: rewrite_aliases(:updates, query),
+              group_bys: rewrite_aliases(:group_bys, query),
+              order_bys: rewrite_aliases(:order_bys, query)}
   end
-  defp rewrite_aliases(exprs, aliases) when is_list(exprs) do
-    Enum.map(exprs, fn(expr) -> rewrite_aliases(expr, aliases) end)
+  defp rewrite_aliases(key, query = %Ecto.Query{sources: sources}) do
+    rewrite_aliases(Map.get(query, key), Tuple.to_list(sources))
   end
-  defp rewrite_aliases(query = %{expr: expr}, aliases) do
-    %{query | expr: Macro.prewalk(expr, fn(ast) -> rewrite_aliases(ast, aliases) end)}
+  defp rewrite_aliases(exprs, sources) when is_list(exprs) do
+    Enum.map(exprs, fn(expr) -> rewrite_aliases(expr, sources) end)
   end
-  defp rewrite_aliases({{:., [], [{:&, [], [binding]}, field]}, [], []}, aliases) do
-    field_name = Enum.at(aliases, binding)[field] || field
-    {{:., [], [{:&, [], [binding]}, field_name]}, [], []}
+  defp rewrite_aliases(query = %{expr: expr}, sources) do
+    %{query | expr: Macro.prewalk(expr, fn(ast) -> rewrite_aliases(ast, sources) end)}
   end
-  defp rewrite_aliases({field, tag = %Ecto.Query.Tagged{type: {binding, field}}}, aliases) do
-    {Enum.at(aliases, binding)[field] || field, tag}
+  defp rewrite_aliases({{:., [], [{:&, [], [binding]}, field]}, [], []}, sources) do
+    {{:., [], [{:&, [], [binding]}, find_field_source(sources, binding, field)]}, [], []}
   end
-  defp rewrite_aliases({:ok, {op, fields}}, source = {_, schema}) when is_list(fields) and not is_nil(schema) do
-    aliases = schema.__schema__(:aliases)
-    fields = Enum.map(fields, fn(field) ->
-      case is_atom(field) do
-        true -> aliases[field] || field
-        false -> field
-      end
-    end)
-    {{:ok, {op, fields}}, source}
+  defp rewrite_aliases({field, tag = %Ecto.Query.Tagged{type: {binding, field}}}, sources) do
+    {find_field_source(sources, binding, field), tag}
+  end
+  defp rewrite_aliases({:ok, {op, fields}}, source) when is_list(fields) do
+    {{:ok, {op, find_field_source(source, fields)}}, source}
   end
   defp rewrite_aliases({:ok, {op, fields}}, source) do
     {{:ok, {op, fields}}, source}
@@ -638,6 +615,15 @@ defmodule Ecto.Query.Planner do
   defp rewrite_aliases(other, _) do
     other
   end
+
+  defp find_field_source(sources, binding, field) when is_list(sources),
+    do: find_field_source(Enum.at(sources, binding), field)
+  defp find_field_source(source, fields) when is_list(fields),
+    do: Enum.map(fields, fn(field) -> find_field_source(source, field) end)
+  defp find_field_source({_, schema}, field) when not is_nil(schema),
+    do: schema.__schema__(:source, field) || field
+  defp find_field_source(_source, field),
+    do: field
 
   defp find_source_expr(query, 0) do
     query.from

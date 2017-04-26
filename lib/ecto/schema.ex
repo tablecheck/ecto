@@ -408,6 +408,7 @@ defmodule Ecto.Schema do
         Ecto.Schema.__changeset__(@changeset_fields),
         Ecto.Schema.__schema__(prefix, source, fields, aliased_fields, primary_key_fields),
         Ecto.Schema.__types__(fields, aliased_fields),
+        Ecto.Schema.__sources__(fields, aliased_fields),
         Ecto.Schema.__assocs__(assocs),
         Ecto.Schema.__embeds__(embeds),
         Ecto.Schema.__read_after_writes__(@ecto_raw),
@@ -1673,6 +1674,25 @@ defmodule Ecto.Schema do
       unquote(fields_quoted)
       unquote(aliases_quoted)
       def __schema__(:type, _), do: nil
+    end
+  end
+
+  @doc false
+  def __sources__(fields, aliased_fields) do
+    quoted =
+      Enum.map(fields, fn {name, _type} ->
+        quote do
+          def __schema__(:source, unquote(name)) do
+            name = unquote(Macro.escape(name))
+            aliases = unquote(Macro.escape(aliased_fields))
+            aliases[name] || name
+          end
+        end
+      end)
+
+    quote do
+      unquote(quoted)
+      def __schema__(:source, _), do: nil
     end
   end
 
