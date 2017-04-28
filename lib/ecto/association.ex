@@ -1110,7 +1110,7 @@ defmodule Ecto.Association.ArrayBelongsTo do
   @doc false
   def assoc_query(%{queryable: queryable, related_key: related_key}, query, values) do
     Enum.reduce(values, (query || queryable), fn value, query ->
-      from x in query, or_where: ^value in field(x, ^related_key)
+      from x in query, or_where: field(x, ^related_key) in ^value
     end)
   end
 

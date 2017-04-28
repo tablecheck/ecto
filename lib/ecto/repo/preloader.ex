@@ -219,15 +219,21 @@ defmodule Ecto.Repo.Preloader do
   defp load_assoc({:assoc, assoc, ids}, struct) do
     %{field: field, owner_key: owner_key, cardinality: cardinality} = assoc
     key = Map.fetch!(struct, owner_key)
-
-    loaded =
-      case ids do
-        %{^key => value} -> value
-        _ when cardinality == :many -> []
-        _ -> nil
-      end
-
+    loaded = load_assoc_data(key, cardinality, ids)
     Map.put(struct, field, loaded)
+  end
+
+  defp load_assoc_data(key, cardinality, ids) when is_list(key) do
+    Enum.map(key, fn(key) ->
+      load_assoc_data(key, cardinality, ids)
+    end) |> List.flatten
+  end
+  defp load_assoc_data(key, cardinality, ids) do
+    case ids do
+      %{^key => value} -> value
+      _ when cardinality == :many -> []
+      _ -> nil
+    end
   end
 
   defp load_through({:through, assoc, throughs}, struct) do
