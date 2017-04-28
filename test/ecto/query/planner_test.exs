@@ -1,5 +1,4 @@
 Code.require_file "../../../integration_test/support/types.exs", __DIR__
-require IEx
 defmodule Ecto.Query.PlannerTest do
   use ExUnit.Case, async: true
 
