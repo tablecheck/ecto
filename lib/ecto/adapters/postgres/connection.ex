@@ -786,12 +786,16 @@ if Code.ensure_loaded?(Postgrex) do
     defp column_options(type, opts) do
       default = Keyword.fetch(opts, :default)
       null    = Keyword.get(opts, :null)
-      [default_expr(default, type), null_expr(null)]
+      encode  = Keyword.get(opts, :encode)
+      [default_expr(default, type), null_expr(null), encode_expr(encode)]
     end
 
     defp null_expr(false), do: " NOT NULL"
     defp null_expr(true), do: " NULL"
     defp null_expr(_), do: []
+
+    defp encode_expr(encoding) when byte_size(encoding) > 0, do: " ENCODE " <> encoding
+    defp encode_expr(_), do: []
 
     defp new_constraint_expr(%Constraint{check: check} = constraint) when is_binary(check) do
       ["CONSTRAINT ", quote_name(constraint.name), " CHECK (", check, ")"]
