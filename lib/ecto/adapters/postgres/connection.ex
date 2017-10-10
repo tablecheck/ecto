@@ -603,7 +603,7 @@ if Code.ensure_loaded?(Postgrex) do
                if_do(command == :create_if_not_exists, "IF NOT EXISTS "),
                table_name, ?\s, ?(,
                column_definitions(table, columns), pk_definition(columns, ", "), ?),
-               options_expr(table.options)]
+               options_expr(table.options)] ++ sk_definition(columns)
 
       [query] ++
         comments_on("TABLE", table_name, table.comment) ++
@@ -694,6 +694,18 @@ if Code.ensure_loaded?(Postgrex) do
       case pks do
         [] -> []
         _  -> [prefix, "PRIMARY KEY (", intersperse_map(pks, ", ", &quote_name/1), ")"]
+      end
+    end
+
+    defp sk_definition(columns) do
+      sks =
+        for {_, name, _, opts} <- columns,
+            opts[:sortkey],
+            do: name
+
+      case sks do
+        [] -> []
+        _  -> [" SORTKEY (", intersperse_map(sks, ", ", &quote_name/1), ")"]
       end
     end
 
