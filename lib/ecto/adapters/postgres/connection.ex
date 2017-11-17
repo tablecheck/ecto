@@ -151,9 +151,9 @@ if Code.ensure_loaded?(Postgrex) do
       {from, name} = get_source(query, sources, 0, from)
 
       {join, wheres} = using_join(query, :delete_all, "USING", sources)
-      where = where(%{query | wheres: wheres ++ query.wheres}, sources)
+      where = where(%{query | wheres: wheres ++ query.wheres}, [])
 
-      ["DELETE FROM ", from, " AS ", name, join, where | returning(query, sources)]
+      ["DELETE FROM ", from, join, where | returning(query, sources)]
     end
 
     def insert(prefix, table, header, rows, on_conflict, returning) do
@@ -899,6 +899,10 @@ if Code.ensure_loaded?(Postgrex) do
     defp get_source(query, sources, ix, source) do
       {expr, name, _schema} = elem(sources, ix)
       {expr || paren_expr(source, sources, query), name}
+    end
+
+    defp quote_qualified_name(name, [], _) do
+      quote_name(name)
     end
 
     defp quote_qualified_name(name, sources, ix) do
