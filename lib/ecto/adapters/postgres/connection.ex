@@ -434,8 +434,10 @@ if Code.ensure_loaded?(Postgrex) do
       [expr(left, sources, query), " IN (", args, ?)]
     end
 
-    defp expr({:in, _, [left, {:^, _, [ix, _]}]}, sources, query) do
-      [expr(left, sources, query), " = ANY($", Integer.to_string(ix + 1), ?)]
+    defp expr({:in, _, [left, {:^, _, [ix, length]}]}, sources, query) do
+      vars = Enum.map(1..length, &("$#{Integer.to_string(ix + &1)}"))
+      args = Enum.intersperse(vars, ?,)
+      [expr(left, sources, query), " IN (", args, ?)]
     end
 
     defp expr({:in, _, [left, right]}, sources, query) do

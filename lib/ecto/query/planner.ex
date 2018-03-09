@@ -484,7 +484,7 @@ defmodule Ecto.Query.Planner do
   def prepare_cache(query, operation, adapter, counter) do
     {query, {cache, params}} =
       traverse_exprs(query, operation, {[], []}, &{&3, merge_cache(&1, &2, &3, &4, adapter)})
-    {query, Enum.reverse(params), finalize_cache(query, operation, cache, counter)}
+    {query, params |> Enum.reverse() |> List.flatten(), :nocache}
   end
 
   defp merge_cache(:from, _query, expr, {cache, params}, _adapter) do
@@ -875,7 +875,7 @@ defmodule Ecto.Query.Planner do
 
     case adapter.dumpers(t, t) do
       [{:in, _} | _] -> {{:^, meta, [acc, length]}, acc + length}
-      _ -> {{:^, meta, [acc, length]}, acc + 1}
+      _ -> {{:^, meta, [acc, length]}, acc + length}
     end
   end
 
