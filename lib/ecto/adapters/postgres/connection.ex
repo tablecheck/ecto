@@ -148,7 +148,7 @@ if Code.ensure_loaded?(Postgrex) do
 
     def delete_all(%{from: from} = query) do
       sources = create_names(query)
-      {from, name} = get_source(query, sources, 0, from)
+      {from, _name} = get_source(query, sources, 0, from)
 
       {join, wheres} = using_join(query, :delete_all, "USING", sources)
       where = where(%{query | wheres: wheres ++ query.wheres}, [])

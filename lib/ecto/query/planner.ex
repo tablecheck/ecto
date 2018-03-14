@@ -481,8 +481,8 @@ defmodule Ecto.Query.Planner do
   @doc """
   Prepare the parameters by merging and casting them according to sources.
   """
-  def prepare_cache(query, operation, adapter, counter) do
-    {query, {cache, params}} =
+  def prepare_cache(query, operation, adapter, _counter) do
+    {query, {_cache, params}} =
       traverse_exprs(query, operation, {[], []}, &{&3, merge_cache(&1, &2, &3, &4, adapter)})
     {query, params |> Enum.reverse() |> List.flatten(), :nocache}
   end
@@ -551,32 +551,6 @@ defmodule Ecto.Query.Planner do
   defp merge_cache(_left, _right, false),  do: :nocache
   defp merge_cache(_left, :nocache, true), do: :nocache
   defp merge_cache(left, right, true),     do: [left|right]
-
-  defp finalize_cache(_query, _operation, :nocache, _counter) do
-    :nocache
-  end
-
-  defp finalize_cache(%{assocs: assocs, prefix: prefix, lock: lock, select: select},
-                      operation, cache, counter) do
-    cache =
-      case select do
-        %{take: take} when take != %{} ->
-          [take: take] ++ cache
-        _ ->
-          cache
-      end
-
-    cache =
-      cache
-      |> prepend_if(assocs != [],  [assocs: assocs])
-      |> prepend_if(prefix != nil, [prefix: prefix])
-      |> prepend_if(lock != nil,   [lock: lock])
-
-    [operation, counter | cache]
-  end
-
-  defp prepend_if(cache, true, prepend), do: prepend ++ cache
-  defp prepend_if(cache, false, _prepend), do: cache
 
   defp source_cache({_, nil} = source, params),
     do: {source, params}
