@@ -538,17 +538,14 @@ defmodule Ecto.Adapters.SQL do
   end
 
   @doc false
-  def struct(repo, conn, sql, {operation, source, params}, values, on_conflict, returning, opts) do
+  def struct(repo, conn, sql, {_operation, _source, _params}, values, on_conflict, returning, opts) do
     case query(repo, sql, values, fn x -> x end, opts) do
       {:ok, %{rows: nil, num_rows: 1}} ->
         {:ok, []}
-      {:ok, %{rows: [values], num_rows: 1}} ->
+      {:ok, %{rows: [values], num_rows: num_rows}} when num_rows >= 1 ->
         {:ok, Enum.zip(returning, values)}
       {:ok, %{num_rows: 0}} ->
         if on_conflict == :nothing, do: {:ok, []}, else: {:error, :stale}
-      {:ok, %{num_rows: num_rows}} when num_rows > 1 ->
-        raise Ecto.MultiplePrimaryKeyError,
-              source: source, params: params, count: num_rows, operation: operation
       {:error, err} ->
         case conn.to_constraints(err) do
           []          -> raise err
