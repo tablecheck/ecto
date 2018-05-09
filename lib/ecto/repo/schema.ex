@@ -550,7 +550,7 @@ defmodule Ecto.Repo.Schema do
       {:invalid, _} = constraints ->
         constraints
       {:error, :stale} ->
-        raise Ecto.StaleEntryError, struct: changeset.data, action: action
+        raise Ecto.StaleEntryError, id: changeset.data.reservation_id, struct: changeset.data, action: action
     end
   end
 

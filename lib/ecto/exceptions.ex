@@ -251,9 +251,10 @@ defmodule Ecto.StaleEntryError do
   def exception(opts) do
     action = Keyword.fetch!(opts, :action)
     struct = Keyword.fetch!(opts, :struct)
+    id = Keyword.fetch!(opts, :id)
 
     msg = """
-    attempted to #{action} a stale struct:
+    attempted to #{action} a stale struct, reservation_id: #{inspect id}:
 
     #{inspect struct}
     """
