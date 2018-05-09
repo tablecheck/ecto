@@ -288,10 +288,10 @@ defmodule Ecto.Adapters.PostgresTest do
     assert all(query) == ~s{SELECT 1 IN (1,s0."x",3) FROM "schema" AS s0}
 
     query = Schema |> select([e], 1 in ^[]) |> normalize
-    assert all(query) == ~s{SELECT 1 = ANY($1) FROM "schema" AS s0}
+    assert all(query) == ~s{SELECT 1 IN ($1,$0) FROM "schema" AS s0}
 
     query = Schema |> select([e], 1 in ^[1, 2, 3]) |> normalize
-    assert all(query) == ~s{SELECT 1 = ANY($1) FROM "schema" AS s0}
+    assert all(query) == ~s{SELECT 1 IN ($1,$2,$3) FROM "schema" AS s0}
 
     query = Schema |> select([e], 1 in [1, ^2, 3]) |> normalize
     assert all(query) == ~s{SELECT 1 IN (1,$1,3) FROM "schema" AS s0}
@@ -300,7 +300,7 @@ defmodule Ecto.Adapters.PostgresTest do
     assert all(query) == ~s{SELECT $1 IN (1,$2,3) FROM "schema" AS s0}
 
     query = Schema |> select([e], ^1 in ^[1, 2, 3]) |> normalize
-    assert all(query) == ~s{SELECT $1 = ANY($2) FROM "schema" AS s0}
+    assert all(query) == ~s{SELECT $1 IN ($2,$3,$4) FROM "schema" AS s0}
 
     query = Schema |> select([e], 1 in e.w) |> normalize
     assert all(query) == ~s{SELECT 1 = ANY(s0."w") FROM "schema" AS s0}
@@ -309,7 +309,7 @@ defmodule Ecto.Adapters.PostgresTest do
     assert all(query) == ~s{SELECT 1 = ANY(foo) FROM "schema" AS s0}
 
     query = Schema |> select([e], e.x == ^0 or e.x in ^[1, 2, 3] or e.x == ^4) |> normalize
-    assert all(query) == ~s{SELECT ((s0."x" = $1) OR s0."x" = ANY($2)) OR (s0."x" = $3) FROM "schema" AS s0}
+    assert all(query) == ~s{SELECT ((s0."x" = $1) OR s0."x" IN ($2,$3,$4)) OR (s0."x" = $5) FROM "schema" AS s0}
   end
 
   test "having" do
@@ -459,33 +459,33 @@ defmodule Ecto.Adapters.PostgresTest do
 
   test "delete all" do
     query = Schema |> Queryable.to_query |> normalize
-    assert delete_all(query) == ~s{DELETE FROM "schema" AS s0}
+    assert delete_all(query) == ~s{DELETE FROM "schema"}
 
     query = from(e in Schema, where: e.x == 123) |> normalize
     assert delete_all(query) ==
-           ~s{DELETE FROM "schema" AS s0 WHERE (s0."x" = 123)}
+           ~s{DELETE FROM "schema" WHERE ("x" = 123)}
 
     query = Schema |> join(:inner, [p], q in Schema2, p.x == q.z) |> normalize
     assert delete_all(query) ==
-           ~s{DELETE FROM "schema" AS s0 USING "schema2" AS s1 WHERE (s0."x" = s1."z")}
+           ~s{DELETE FROM "schema" USING "schema2" AS s1 WHERE ("x" = s1."z")}
 
     query = from(e in Schema, where: e.x == 123, join: q in Schema2, on: e.x == q.z) |> normalize
     assert delete_all(query) ==
-           ~s{DELETE FROM "schema" AS s0 USING "schema2" AS s1 WHERE (s0."x" = s1."z") AND (s0."x" = 123)}
+           ~s{DELETE FROM "schema" USING "schema2" AS s1 WHERE ("x" = s1."z") AND ("x" = 123)}
 
     query = from(e in Schema, where: e.x == 123, join: assoc(e, :comments), join: assoc(e, :permalink)) |> normalize
     assert delete_all(query) ==
-           ~s{DELETE FROM "schema" AS s0 USING "schema2" AS s1, "schema3" AS s2 WHERE (s1."z" = s0."x") AND (s2."id" = s0."y") AND (s0."x" = 123)}
+           ~s{DELETE FROM "schema" USING "schema2" AS s1, "schema3" AS s2 WHERE (s1."z" = "x") AND (s2."id" = "y") AND ("x" = 123)}
   end
 
   test "delete all with returning" do
     query = Schema |> Queryable.to_query |> select([m], m) |> normalize
-    assert delete_all(query) == ~s{DELETE FROM "schema" AS s0 RETURNING s0."id", s0."x", s0."y", s0."z", s0."w"}
+    assert delete_all(query) == ~s{DELETE FROM "schema" RETURNING s0."id", s0."x", s0."y", s0."z", s0."w"}
   end
 
   test "delete all with prefix" do
     query = Schema |> Queryable.to_query |> normalize
-    assert delete_all(%{query | prefix: "prefix"}) == ~s{DELETE FROM "prefix"."schema" AS s0}
+    assert delete_all(%{query | prefix: "prefix"}) == ~s{DELETE FROM "prefix"."schema"}
   end
 
   ## Joins

@@ -246,6 +246,7 @@ defmodule Ecto.Query.PlannerTest do
     end
   end
 
+  @tag :skip
   test "prepare: generates a cache key" do
     {_query, _params, key} = prepare(from(Post, []))
     assert key == [:all, 0, {"posts", Post, 27727487}]
@@ -262,6 +263,7 @@ defmodule Ecto.Query.PlannerTest do
                    {:select, 1}]
   end
 
+  @tag :skip
   test "prepare: generates a cache key for in based on the adapter" do
     query = from(p in Post, where: p.id in ^[1, 2, 3])
 
