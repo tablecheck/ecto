@@ -540,7 +540,7 @@ defmodule Ecto.Adapters.SQL do
   @doc false
   def struct(repo, conn, sql, {_operation, _source, _params}, values, on_conflict, returning, opts) do
     case query(repo, sql, values, fn x -> x end, opts) do
-      {:ok, %{rows: nil, num_rows: 1}} ->
+      {:ok, %{rows: nil, num_rows: num_rows}} when num_rows >= 1 ->
         {:ok, []}
       {:ok, %{rows: [values], num_rows: num_rows}} when num_rows >= 1 ->
         {:ok, Enum.zip(returning, values)}
