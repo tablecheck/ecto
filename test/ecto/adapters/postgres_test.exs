@@ -307,6 +307,9 @@ defmodule Ecto.Adapters.PostgresTest do
 
     query = Schema |> select([e], 1 in fragment("foo")) |> normalize
     assert all(query) == ~s{SELECT 1 = ANY(foo) FROM "schema" AS s0}
+
+    query = Schema |> select([e], e.x == ^0 or e.x in ^[1, 2, 3] or e.x == ^4) |> normalize
+    assert all(query) == ~s{SELECT ((s0."x" = $1) OR s0."x" = ANY($2)) OR (s0."x" = $3) FROM "schema" AS s0}
   end
 
   test "having" do
@@ -575,7 +578,7 @@ defmodule Ecto.Adapters.PostgresTest do
   test "cross join" do
     query = from(p in Schema, cross_join: c in Schema2, select: {p.id, c.id}) |> normalize()
     assert all(query) ==
-           "SELECT s0.\"id\", s1.\"id\" FROM \"schema\" AS s0 CROSS JOIN \"schema2\" AS s1 ON TRUE"
+           "SELECT s0.\"id\", s1.\"id\" FROM \"schema\" AS s0 CROSS JOIN \"schema2\" AS s1"
   end
 
   test "join produces correct bindings" do
@@ -800,7 +803,9 @@ defmodule Ecto.Adapters.PostgresTest do
                {:add, :category_5, %Reference{table: :categories, on_update: :nothing}, []},
                {:add, :category_6, %Reference{table: :categories, on_update: :update_all}, [null: false]},
                {:add, :category_7, %Reference{table: :categories, on_update: :nilify_all}, []},
-               {:add, :category_8, %Reference{table: :categories, on_delete: :nilify_all, on_update: :update_all}, [null: false]}]}
+               {:add, :category_8, %Reference{table: :categories, on_delete: :nilify_all, on_update: :update_all}, [null: false]},
+               {:add, :category_9, %Reference{table: :categories, on_delete: :restrict}, []},
+               {:add, :category_10, %Reference{table: :categories, on_update: :restrict}, []}]}
 
     assert execute_ddl(create) == ["""
     CREATE TABLE "posts" ("id" serial,
@@ -813,6 +818,8 @@ defmodule Ecto.Adapters.PostgresTest do
     "category_6" bigint NOT NULL CONSTRAINT "posts_category_6_fkey" REFERENCES "categories"("id") ON UPDATE CASCADE,
     "category_7" bigint CONSTRAINT "posts_category_7_fkey" REFERENCES "categories"("id") ON UPDATE SET NULL,
     "category_8" bigint NOT NULL CONSTRAINT "posts_category_8_fkey" REFERENCES "categories"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+    "category_9" bigint CONSTRAINT "posts_category_9_fkey" REFERENCES "categories"("id") ON DELETE RESTRICT,
+    "category_10" bigint CONSTRAINT "posts_category_10_fkey" REFERENCES "categories"("id") ON UPDATE RESTRICT,
     PRIMARY KEY ("id"))
     """ |> remove_newlines]
   end

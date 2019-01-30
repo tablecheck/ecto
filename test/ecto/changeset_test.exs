@@ -41,6 +41,7 @@ defmodule Ecto.ChangesetTest do
       field :title, :string, default: ""
       field :body
       field :uuid, :binary_id
+      field :color, :binary
       field :decimal, :decimal
       field :upvotes, :integer, default: 0
       field :topics, {:array, :string}
@@ -55,7 +56,7 @@ defmodule Ecto.ChangesetTest do
   end
 
   defp changeset(schema \\ %Post{}, params) do
-    cast(schema, params, ~w(id token title body upvotes decimal topics virtual))
+    cast(schema, params, ~w(id token title body upvotes decimal color topics virtual)a)
   end
 
   ## cast/4
@@ -709,6 +710,15 @@ defmodule Ecto.ChangesetTest do
     assert changeset.changes == %{}
     assert changeset.errors == [title: {"is blank", [validation: :required]}, body: {"is blank", [validation: :required]}]
 
+    # When :trim option is false
+    changeset = changeset(%{title: " "}) |> validate_required(:title, trim: false)
+    assert changeset.valid?
+    assert changeset.errors == []
+
+    changeset = changeset(%{color: <<12, 12, 12>>}) |> validate_required(:color, trim: false)
+    assert changeset.valid?
+    assert changeset.errors == []
+
     # When unknown field
     assert_raise ArgumentError, ~r/unknown field :bad for changeset on/, fn  ->
       changeset(%{"title" => "hello", "body" => "something"})
@@ -1087,8 +1097,14 @@ defmodule Ecto.ChangesetTest do
     assert changeset.errors ==
            [title: {"is taken", validation: :unsafe_unique, fields: [:title]}]
 
+    # with prefix option
+    Process.put(:test_repo_all_results, dup_result)
+    changeset = unsafe_validate_unique(base_changeset, :title, TestRepo, prefix: "public")
+    assert changeset.errors ==
+           [title: {"has already been taken", validation: :unsafe_unique, fields: [:title]}]
+
     Process.put(:test_repo_all_results, no_dup_result)
-    changeset = unsafe_validate_unique(base_changeset, [:title], TestRepo, "is taken")
+    changeset = unsafe_validate_unique(base_changeset, :title, TestRepo, prefix: "public")
     assert changeset.valid?
   end
 

@@ -64,12 +64,26 @@ defmodule Ecto.Integration.JoinsTest do
     p2 = TestRepo.insert!(%Post{title: "2"})
     c1 = TestRepo.insert!(%Permalink{url: "1", post_id: p2.id})
 
-    permalink = from c in Permalink, where: c.url == ^"1"
+    # Joined query without parameter
+    permalink = from c in Permalink, where: c.url == "1"
 
     query = from(p in Post, join: c in ^permalink, on: c.post_id == p.id, select: {p, c})
     assert [{^p2, ^c1}] = TestRepo.all(query)
 
+    # Joined query witho parameter
+    permalink = from c in Permalink, where: c.url == "1"
+
     query = from(p in Post, join: c in ^permalink, on: c.id == ^c1.id, order_by: p.title, select: {p, c})
+    assert [{^p1, ^c1}, {^p2, ^c1}] = TestRepo.all(query)
+  end
+
+  @tag :cross_join
+  test "cross joins with missing entries" do
+    p1 = TestRepo.insert!(%Post{title: "1"})
+    p2 = TestRepo.insert!(%Post{title: "2"})
+    c1 = TestRepo.insert!(%Permalink{url: "1", post_id: p2.id})
+
+    query = from(p in Post, cross_join: c in Permalink, order_by: p.id, select: {p, c})
     assert [{^p1, ^c1}, {^p2, ^c1}] = TestRepo.all(query)
   end
 

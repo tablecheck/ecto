@@ -51,7 +51,7 @@ defmodule Ecto.Repo.Preloader do
   rescue
     e ->
       # Reraise errors so we ignore the preload inner stacktrace
-      reraise e
+      filter_and_reraise e, System.stacktrace
   end
 
   ## Preloading
@@ -153,8 +153,14 @@ defmodule Ecto.Repo.Preloader do
   end
 
   defp fetch_query(ids, _assoc, _repo, query, _prefix, {_, key}, _take, _opts) when is_function(query, 1) do
-    data = ids |> Enum.uniq |> query.() |> Enum.map(&{Map.fetch!(&1, key), &1}) |> Enum.sort
-    unzip_ids data, [], []
+    # Note we use an explicit sort because we don't want
+    # to reorder based on the struct. Only the ID.
+    ids
+    |> Enum.uniq
+    |> query.()
+    |> Enum.map(&{Map.fetch!(&1, key), &1})
+    |> Enum.sort(fn {id1, _}, {id2, _} -> id1 <= id2 end)
+    |> unzip_ids([], [])
   end
 
   defp fetch_query(ids, %{cardinality: card} = assoc, repo, query, prefix, related_key, take, opts) do
@@ -346,7 +352,7 @@ defmodule Ecto.Repo.Preloader do
 
   def expand(schema, preloads, acc) do
     Enum.reduce(preloads, acc, fn {preload, {fields, query, sub_preloads}}, {assocs, throughs} ->
-      assoc = Ecto.Association.association_from_schema!(schema, preload)
+      assoc = association_from_schema!(schema, preload)
       info  = assoc.__struct__.preload_info(assoc)
 
       case info do
@@ -374,7 +380,27 @@ defmodule Ecto.Repo.Preloader do
                          "with different queries: #{inspect left} and #{inspect right}"
   end
 
-  defp reraise(exception) do
-    reraise exception, Enum.reject(System.stacktrace, &match?({__MODULE__, _, _, _}, &1))
+  # Since there is some ambiguity between assoc and queries.
+  # We reimplement this function here for nice error messages.
+  defp association_from_schema!(schema, assoc) do
+    schema.__schema__(:association, assoc) ||
+      raise ArgumentError,
+            "schema #{inspect schema} does not have association #{inspect assoc}#{maybe_module(assoc)}"
+  end
+
+  defp maybe_module(assoc) do
+    case Atom.to_string(assoc) do
+      "Elixir." <> _ ->
+        " (if you were trying to pass a schema as a query to preload, " <>
+          "you have to explicitly convert it to a query by doing `from x in #{inspect assoc}` " <>
+          "or by calling Ecto.Queryable.to_query/1)"
+
+      _ ->
+        ""
+    end
+  end
+
+  defp filter_and_reraise(exception, stacktrace) do
+    reraise exception, Enum.reject(stacktrace, &match?({__MODULE__, _, _, _}, &1))
   end
 end

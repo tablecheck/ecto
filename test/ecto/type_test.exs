@@ -196,6 +196,9 @@ defmodule Ecto.TypeTest do
            {:ok, @date}
     assert Ecto.Type.cast(:date, ~T[12:23:34]) ==
            :error
+
+    assert Ecto.Type.cast(:date, "2015-12-31T00:00:00") == {:ok, @date}
+    assert Ecto.Type.cast(:date, "2015-12-31 00:00:00") == {:ok, @date}
   end
 
   @time ~T[23:50:07]
@@ -206,11 +209,14 @@ defmodule Ecto.TypeTest do
     assert Ecto.Type.cast(:time, @time) == {:ok, @time}
     assert Ecto.Type.cast(:time, @time_zero) ==  {:ok, @time_zero}
 
+    assert Ecto.Type.cast(:time, "23:50") == {:ok, @time_zero}
     assert Ecto.Type.cast(:time, "23:50:07") == {:ok, @time}
     assert Ecto.Type.cast(:time, "23:50:07Z") == {:ok, @time}
     assert Ecto.Type.cast(:time, "23:50:07.030000") == {:ok, @time_usec}
     assert Ecto.Type.cast(:time, "23:50:07.030000Z") == {:ok, @time_usec}
 
+    assert Ecto.Type.cast(:time, "24:01") == :error
+    assert Ecto.Type.cast(:time, "00:61") == :error
     assert Ecto.Type.cast(:time, "24:01:01") == :error
     assert Ecto.Type.cast(:time, "00:61:00") == :error
     assert Ecto.Type.cast(:time, "00:00:61") == :error
@@ -300,17 +306,17 @@ defmodule Ecto.TypeTest do
     assert Ecto.Type.cast(:naive_datetime, %{year: 2015, month: 1, day: 23, hour: 23, minute: nil}) ==
            :error
 
-    assert Ecto.Type.cast(:naive_datetime, DateTime.from_unix!(10, :seconds)) ==
+    assert Ecto.Type.cast(:naive_datetime, DateTime.from_unix!(10, :second)) ==
            {:ok, ~N[1970-01-01 00:00:10]}
 
-    assert Ecto.Type.cast(:naive_datetime, @time) ==
-           :error
+    assert Ecto.Type.cast(:naive_datetime, @time) == :error
+    assert Ecto.Type.cast(:naive_datetime, 1) == :error
   end
 
-  @datetime DateTime.from_unix!(1422057007, :seconds)
-  @datetime_zero DateTime.from_unix!(1422057000, :seconds)
-  @datetime_usec DateTime.from_unix!(1422057007008000, :microseconds)
-  @datetime_leapyear DateTime.from_unix!(951868207, :seconds)
+  @datetime DateTime.from_unix!(1422057007, :second)
+  @datetime_zero DateTime.from_unix!(1422057000, :second)
+  @datetime_usec DateTime.from_unix!(1422057007008000, :microsecond)
+  @datetime_leapyear DateTime.from_unix!(951868207, :second)
 
   test "casting utc datetime" do
     assert Ecto.Type.cast(:utc_datetime, @datetime) == {:ok, @datetime}
@@ -371,7 +377,7 @@ defmodule Ecto.TypeTest do
     assert Ecto.Type.cast(:utc_datetime, %{year: 2015, month: 1, day: 23, hour: 23, minute: nil}) ==
            :error
 
-    assert Ecto.Type.cast(:utc_datetime, ~T[12:23:34]) ==
-           :error
+    assert Ecto.Type.cast(:utc_datetime, ~T[12:23:34]) == :error
+    assert Ecto.Type.cast(:utc_datetime, 1) == :error
   end
 end

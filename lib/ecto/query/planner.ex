@@ -61,6 +61,8 @@ defmodule Ecto.Query.Planner do
   def rewrite_sources(%{expr: expr, params: params} = part, mapping) do
     expr =
       Macro.prewalk expr, fn
+        %Ecto.Query.Tagged{type: type, tag: tag} = tagged ->
+          %{tagged | type: rewrite_type(type, mapping), tag: rewrite_type(tag, mapping)}
         {:&, meta, [ix]} ->
           {:&, meta, [mapping.(ix)]}
         other ->
@@ -69,15 +71,25 @@ defmodule Ecto.Query.Planner do
 
     params =
       Enum.map params, fn
-        {val, {composite, {ix, field}}} when is_integer(ix) ->
-          {val, {composite, {mapping.(ix), field}}}
-        {val, {ix, field}} when is_integer(ix) ->
-          {val, {mapping.(ix), field}}
+        {val, type} ->
+          {val, rewrite_type(type, mapping)}
         val ->
           val
       end
 
     %{part | expr: expr, params: params}
+  end
+
+  defp rewrite_type({composite, {ix, field}}, mapping) when is_integer(ix) do
+    {composite, {mapping.(ix), field}}
+  end
+
+  defp rewrite_type({ix, field}, mapping) when is_integer(ix) do
+    {mapping.(ix), field}
+  end
+
+  defp rewrite_type(other, _mapping) do
+    other
   end
 
   @doc """
@@ -199,7 +211,7 @@ defmodule Ecto.Query.Planner do
   rescue
     e ->
       # Reraise errors so we ignore the planner inner stacktrace
-      reraise e
+      filter_and_reraise e, System.stacktrace
   end
 
   @doc """
@@ -276,8 +288,11 @@ defmodule Ecto.Query.Planner do
     {source, _} = source_take!(:select, query, take, ix, ix)
     {struct, fields} = subquery_struct_and_fields(source)
 
+    # Map updates may contain virtual fields, so we need to consider those
+    valid_keys = if struct, do: Map.keys(struct.__struct__), else: fields
     update_keys = Keyword.keys(pairs)
-    case update_keys -- fields do
+
+    case update_keys -- valid_keys do
       [] -> :ok
       [key | _] -> error!(query, "invalid key `#{inspect key}` on map update in subquery")
     end
@@ -691,7 +706,7 @@ defmodule Ecto.Query.Planner do
   rescue
     e ->
       # Reraise errors so we ignore the planner inner stacktrace
-      reraise e
+      filter_and_reraise e, System.stacktrace
   end
 
   defp normalize_query(query, operation, adapter, counter) do
@@ -788,7 +803,7 @@ defmodule Ecto.Query.Planner do
 
   defp prewalk({:in, in_meta, [left, {:^, meta, [param]}]}, kind, query, expr, acc, adapter) do
     {left, acc} = prewalk(left, kind, query, expr, acc, adapter)
-    {right, acc} = validate_in(meta, expr, param, acc)
+    {right, acc} = validate_in(meta, expr, param, acc, adapter)
     {{:in, in_meta, [left, right]}, acc}
   end
 
@@ -854,10 +869,14 @@ defmodule Ecto.Query.Planner do
          do: dump_param(adapter, type, v)
   end
 
-  defp validate_in(meta, expr, param, acc) do
-    {v, _t} = Enum.fetch!(expr.params, param)
-    length  = length(v)
-    {{:^, meta, [acc, length]}, acc + length}
+  defp validate_in(meta, expr, param, acc, adapter) do
+    {v, t} = Enum.fetch!(expr.params, param)
+    length = length(v)
+
+    case adapter.dumpers(t, t) do
+      [{:in, _} | _] -> {{:^, meta, [acc, length]}, acc + length}
+      _ -> {{:^, meta, [acc, length]}, acc + 1}
+    end
   end
 
   defp normalize_select(%{select: nil} = query) do
@@ -899,17 +918,29 @@ defmodule Ecto.Query.Planner do
     {put_in(query.select.fields, fields), select}
   end
 
+  # Handling of source
+
+  defp collect_fields({:merge, _, [{:&, _, [0]}, right]}, fields, :error, query, take) do
+    {expr, taken} = source_take!(:select, query, take, 0, 0)
+    {right, right_fields, _from} = collect_fields(right, [], {:source, :from}, query, take)
+    {{:source, :from}, fields, {:ok, {:merge, expr, right}, taken ++ Enum.reverse(right_fields)}}
+  end
+
   defp collect_fields({:&, _, [0]}, fields, :error, query, take) do
     {expr, taken} = source_take!(:select, query, take, 0, 0)
     {{:source, :from}, fields, {:ok, expr, taken}}
   end
+
   defp collect_fields({:&, _, [0]}, fields, from, _query, _take) do
     {{:source, :from}, fields, from}
   end
+
   defp collect_fields({:&, _, [ix]}, fields, from, query, take) do
     {expr, taken} = source_take!(:select, query, take, ix, ix)
     {expr, Enum.reverse(taken, fields), from}
   end
+
+  # Expression handling
 
   defp collect_fields({agg, _, [{{:., _, [{:&, _, [ix]}, field]}, _, []} | _]} = expr,
                       fields, from, %{select: select} = query, _take)
@@ -1153,10 +1184,13 @@ defmodule Ecto.Query.Planner do
     end
   end
   defp type!(kind, lookup, query, expr, schema, field) when is_atom(schema) do
-    if type = schema.__schema__(lookup, field) do
-      type
-    else
-      error! query, expr, "field `#{field}` in `#{kind}` does not exist in schema #{inspect schema}"
+    cond do
+      type = schema.__schema__(lookup, field) ->
+        type
+      Map.has_key?(schema.__struct__, field) ->
+        error! query, expr, "field `#{field}` in `#{kind}` is a virtual field in schema #{inspect schema}"
+      true ->
+        error! query, expr, "field `#{field}` in `#{kind}` does not exist in schema #{inspect schema}"
     end
   end
 
@@ -1240,8 +1274,8 @@ defmodule Ecto.Query.Planner do
     end
   end
 
-  defp reraise(exception) do
-    reraise exception, Enum.reject(System.stacktrace, &match?({__MODULE__, _, _, _}, &1))
+  defp filter_and_reraise(exception, stacktrace) do
+    reraise exception, Enum.reject(stacktrace, &match?({__MODULE__, _, _, _}, &1))
   end
 
   defp error!(query, message) do

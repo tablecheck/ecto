@@ -272,6 +272,9 @@ defmodule Ecto.Adapters.MySQLTest do
 
     query = Schema |> select([e], 1 in fragment("foo")) |> normalize
     assert all(query) == ~s{SELECT 1 = ANY(foo) FROM `schema` AS s0}
+
+    query = Schema |> select([e], e.x == ^0 or e.x in ^[1, 2, 3] or e.x == ^4) |> normalize
+    assert all(query) == ~s{SELECT ((s0.`x` = ?) OR s0.`x` IN (?,?,?)) OR (s0.`x` = ?) FROM `schema` AS s0}
   end
 
   test "having" do
@@ -352,13 +355,13 @@ defmodule Ecto.Adapters.MySQLTest do
     query = Schema |> join(:inner, [p], q in Schema2, p.x == q.z)
                   |> update([_], set: [x: 0]) |> normalize(:update_all)
     assert update_all(query) ==
-           ~s{UPDATE `schema` AS s0 INNER JOIN `schema2` AS s1 ON s0.`x` = s1.`z` SET s0.`x` = 0}
+           ~s{UPDATE `schema` AS s0, `schema2` AS s1 SET s0.`x` = 0 WHERE (s0.`x` = s1.`z`)}
 
     query = from(e in Schema, where: e.x == 123, update: [set: [x: 0]],
                              join: q in Schema2, on: e.x == q.z) |> normalize(:update_all)
     assert update_all(query) ==
-           ~s{UPDATE `schema` AS s0 INNER JOIN `schema2` AS s1 ON s0.`x` = s1.`z` } <>
-           ~s{SET s0.`x` = 0 WHERE (s0.`x` = 123)}
+           ~s{UPDATE `schema` AS s0, `schema2` AS s1 } <>
+           ~s{SET s0.`x` = 0 WHERE (s0.`x` = s1.`z`) AND (s0.`x` = 123)}
   end
 
   test "update all with prefix" do
@@ -468,7 +471,7 @@ defmodule Ecto.Adapters.MySQLTest do
   test "cross join" do
     query = from(p in Schema, cross_join: c in Schema2, select: {p.id, c.id}) |> normalize()
     assert all(query) ==
-           "SELECT s0.`id`, s1.`id` FROM `schema` AS s0 CROSS JOIN `schema2` AS s1 ON TRUE"
+           "SELECT s0.`id`, s1.`id` FROM `schema` AS s0 CROSS JOIN `schema2` AS s1"
   end
 
   test "join produces correct bindings" do
@@ -529,6 +532,15 @@ defmodule Ecto.Adapters.MySQLTest do
 
     query = insert(nil, "schema", [:x, :y], [[:x, :y]], {:replace_all, [], []}, [])
     assert query == ~s{INSERT INTO `schema` (`x`,`y`) VALUES (?,?) ON DUPLICATE KEY UPDATE `x` = VALUES(`x`),`y` = VALUES(`y`)}
+
+    assert_raise ArgumentError, "The :conflict_target option is not supported in insert/insert_all by MySQL", fn ->
+      insert(nil, "schema", [:x, :y], [[:x, :y]], {[:x, :y], [], [:x]}, [])
+    end
+
+    assert_raise ArgumentError, "Using a query with :where in combination with the :on_conflict option is not supported by MySQL", fn ->
+      update = from("schema", update: [set: [x: ^"foo"]], where: [z: "bar"]) |> normalize(:update_all)
+      insert(nil, "schema", [:x, :y], [[:x, :y]], {update, [], []}, [])
+    end
   end
 
   test "update" do

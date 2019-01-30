@@ -155,6 +155,11 @@ defmodule Ecto.Repo.Queryable do
         stream = adapter.stream(repo, meta, prepared, params, preprocessor, opts)
         postprocessor = postprocessor(postprocess, take, prefix, adapter)
 
+        if preloads != [] do
+          IO.warn "passing a query with preloads to #{inspect repo}.stream/2 leads to " <>
+                  "erratic behaviour and will raise in future Ecto versions"
+        end
+
         Stream.flat_map(stream, fn {_, rows} ->
           rows
           |> Ecto.Repo.Assoc.query(assocs, sources)
@@ -225,7 +230,14 @@ defmodule Ecto.Repo.Queryable do
   end
   defp process(row, {:struct, struct, args}, from, prefix, adapter) do
     {fields, row} = process_kv(args, row, from, prefix, adapter)
-    {Map.merge(struct.__struct__(), Map.new(fields)), row}
+
+    case Map.merge(struct.__struct__(), Map.new(fields)) do
+      %{__meta__: %Ecto.Schema.Metadata{source: {_, source}} = metadata} = struct ->
+        metadata = %{metadata | state: :loaded, source: {prefix, source}}
+        {Map.put(struct, :__meta__, metadata), row}
+      map ->
+        {map, row}
+    end
   end
   defp process(row, {:map, data, args}, from, prefix, adapter) do
     {data, row} = process(row, data, from, prefix, adapter)

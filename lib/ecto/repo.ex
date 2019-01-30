@@ -64,6 +64,12 @@ defmodule Ecto.Repo do
   The schema can be of any value. The path represents the database name
   while options are simply merged in.
 
+  URL can include query parameters to override shared and adapter-specific
+  options `ssl`, `timeout`, `pool_timeout`, `pool_size`:
+
+    config :my_app, Repo,
+        url: "ecto://postgres:postgres@localhost/ecto_simple?ssl=true&pool_size=10"
+
   In case the URL needs to be dynamically configured, for example by
   reading a system environment variable, such can be done via the
   `c:init/2` repository callback:
@@ -103,7 +109,7 @@ defmodule Ecto.Repo do
         Enum.reduce(opts[:loggers] || config[:loggers] || [Ecto.LogEntry], quote(do: entry), fn
           mod, acc when is_atom(mod) ->
             quote do: unquote(mod).log(unquote(acc))
-          {Ecto.LogEntry, :log, [level]}, _acc when not level in [:error, :info, :warn, :debug] ->
+          {Ecto.LogEntry, :log, [level]}, _acc when not(level in [:error, :info, :warn, :debug]) ->
             raise ArgumentError, "the log level #{inspect level} is not supported in Ecto.LogEntry"
           {mod, fun, args}, acc ->
             quote do: unquote(mod).unquote(fun)(unquote(acc), unquote_splicing(args))
@@ -811,6 +817,12 @@ defmodule Ecto.Repo do
           {:ok, updated} = MyRepo.insert(%Post{title: "this is unique"}, on_conflict: on_conflict)
           Repo.get(Post, updated.id)
 
+  Because of the inability to know if the struct is up to date or not,
+  using associations with the `:on_conflict` option is not recommended.
+  For instance, Ecto may even trigger constraint violations when associations
+  are used with `on_conflict: :nothing`, as no ID will be available in
+  the case the record already exists, and it is not possible for Ecto to
+  detect such cases reliably.
   """
   @callback insert(struct_or_changeset :: Ecto.Schema.t | Ecto.Changeset.t, opts :: Keyword.t) ::
             {:ok, Ecto.Schema.t} | {:error, Ecto.Changeset.t}
@@ -1012,7 +1024,7 @@ defmodule Ecto.Repo do
 
   """
   @callback transaction(fun_or_multi :: fun | Ecto.Multi.t, opts :: Keyword.t) ::
-    {:ok, any} | {:error, any} | {:error, atom, any, %{atom => any}}
+    {:ok, any} | {:error, any} | {:error, Ecto.Multi.name, any, %{Ecto.Multi.name => any}}
   @optional_callbacks [transaction: 2]
 
   @doc """

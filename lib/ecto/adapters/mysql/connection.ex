@@ -100,9 +100,9 @@ if Code.ensure_loaded?(Mariaex) do
         update_fields(:update, query, sources)
       end
 
-      join   = join(query, sources)
+      {join, wheres} = using_join(query, :update_all, sources)
       prefix = prefix || ["UPDATE ", from, " AS ", name, join, " SET "]
-      where  = where(query, sources)
+      where  = where(%{query | wheres: wheres ++ query.wheres}, sources)
 
       [prefix, fields | where]
     end
@@ -149,8 +149,11 @@ if Code.ensure_loaded?(Mariaex) do
          [quoted, " = VALUES(", quoted, ?)]
        end)]
     end
-    defp on_conflict({query, _, []}, _header) do
+    defp on_conflict({%{wheres: []} = query, _, []}, _header) do
       [" ON DUPLICATE KEY " | update_all(query, "UPDATE ")]
+    end
+    defp on_conflict({_query, _, []}, _header) do
+      error!(nil, "Using a query with :where in combination with the :on_conflict option is not supported by MySQL")
     end
 
     defp insert_all(rows) do
@@ -244,14 +247,36 @@ if Code.ensure_loaded?(Mariaex) do
       error!(query, "Unknown update operation #{inspect command} for MySQL")
     end
 
+    defp using_join(%Query{joins: []}, _kind, _sources), do: {[], []}
+    defp using_join(%Query{joins: joins} = query, kind, sources) do
+      froms =
+        intersperse_map(joins, ", ", fn
+          %JoinExpr{qual: :inner, ix: ix, source: source} ->
+            {join, name} = get_source(query, sources, ix, source)
+            [join, " AS " | name]
+          %JoinExpr{qual: qual} ->
+            error!(query, "MySQL adapter supports only inner joins on #{kind}, got: `#{qual}`")
+        end)
+
+      wheres =
+        for %JoinExpr{on: %QueryExpr{expr: value} = expr} <- joins,
+            value != true,
+            do: expr |> Map.put(:__struct__, BooleanExpr) |> Map.put(:op, :and)
+
+      {[?,, ?\s | froms], wheres}
+    end
+
     defp join(%Query{joins: []}, _sources), do: []
     defp join(%Query{joins: joins} = query, sources) do
       Enum.map(joins, fn
         %JoinExpr{on: %QueryExpr{expr: expr}, qual: qual, ix: ix, source: source} ->
           {join, name} = get_source(query, sources, ix, source)
-          [join_qual(qual, query), join, " AS ", name, " ON " | expr(expr, sources, query)]
+          [join_qual(qual, query), join, " AS ", name | join_on(qual, expr, sources, query)]
       end)
     end
+
+    defp join_on(:cross, true, _sources, _query), do: []
+    defp join_on(_qual, expr, sources, query), do: [" ON " | expr(expr, sources, query)]
 
     defp join_qual(:inner, _), do: " INNER JOIN "
     defp join_qual(:left, _),  do: " LEFT OUTER JOIN "
@@ -705,10 +730,12 @@ if Code.ensure_loaded?(Mariaex) do
 
     defp reference_on_delete(:nilify_all), do: " ON DELETE SET NULL"
     defp reference_on_delete(:delete_all), do: " ON DELETE CASCADE"
+    defp reference_on_delete(:restrict), do: " ON DELETE RESTRICT"
     defp reference_on_delete(_), do: []
 
     defp reference_on_update(:nilify_all), do: " ON UPDATE SET NULL"
     defp reference_on_update(:update_all), do: " ON UPDATE CASCADE"
+    defp reference_on_update(:restrict), do: " ON UPDATE RESTRICT"
     defp reference_on_update(_), do: []
 
     ## Helpers

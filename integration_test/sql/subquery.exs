@@ -14,8 +14,11 @@ defmodule Ecto.Integration.SubQueryTest do
     query = from p in Post, select: p
     assert ["hello"] =
            TestRepo.all(from p in subquery(query), select: p.text)
-    assert [%Post{inserted_at: %NaiveDateTime{}}] =
+    assert [post] =
            TestRepo.all(from p in subquery(query), select: p)
+
+    assert %NaiveDateTime{} = post.inserted_at
+    assert post.__meta__.state == :loaded
   end
 
   test "from: subqueries with map and select expression" do
@@ -44,6 +47,16 @@ defmodule Ecto.Integration.SubQueryTest do
            TestRepo.all(from p in subquery(query), select: {p.text, p})
     assert [{%Post{text: "hello", public: false}, false}] =
            TestRepo.all(from p in subquery(query), select: {p, p.public})
+  end
+
+  test "from: subqueries with map update on virtual field and select expression" do
+    TestRepo.insert!(%Post{text: "hello"})
+
+    query = from p in Post, select: %{p | temp: p.text}
+    assert ["hello"] =
+           TestRepo.all(from p in subquery(query), select: p.temp)
+    assert [%Post{text: "hello", temp: "hello"}] =
+           TestRepo.all(from p in subquery(query), select: p)
   end
 
   test "from: subqueries with aggregates" do

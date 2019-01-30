@@ -491,7 +491,7 @@ defmodule Ecto.Schema do
         |> Keyword.merge(opts)
 
       type      = Keyword.fetch!(timestamps, :type)
-      precision = if Keyword.fetch!(timestamps, :usec), do: :microseconds, else: :seconds
+      precision = if Keyword.fetch!(timestamps, :usec), do: :microsecond, else: :second
       autogen   = timestamps[:autogenerate] || {Ecto.Schema, :__timestamps__, [type, precision]}
 
       if inserted_at = Keyword.fetch!(timestamps, :inserted_at) do
@@ -1219,6 +1219,7 @@ defmodule Ecto.Schema do
       end
   """
   defmacro many_to_many(name, queryable, opts \\ []) do
+    queryable = expand_alias(queryable, __CALLER__)
     quote do
       Ecto.Schema.__many_to_many__(__MODULE__, unquote(name), unquote(queryable), unquote(opts))
     end
@@ -1262,7 +1263,7 @@ defmodule Ecto.Schema do
         use Ecto.Schema
 
         embedded_schema do
-          field :name
+          field :title
         end
       end
 
@@ -1374,10 +1375,11 @@ defmodule Ecto.Schema do
   inside of it. Embeds have all the things regular schemas have.
 
   It is recommended to declare your `embeds_many/3` field with type
-  `{:array, :map}` and default value of `[]` at the database level.
-  In fact, Ecto will automatically translate `nil` values from the
-  database into empty lists for embeds many (this behaviour is specific
-  to `embeds_many/3` fields in order to mimic `has_many/3`).
+  `{:array, :map}` and a default of `[]` at the database level, or type `:jsonb`
+  with a default of `"[]"` if you are using PostgreSQL. In fact, Ecto will
+  automatically translate `nil` values from the database into empty lists for
+  embeds many (this behaviour is specific to `embeds_many/3` fields in order
+  to mimic `has_many/3`).
 
   The embedded may or may not have a primary key. Ecto use the primary keys
   to detect if an embed is being updated or not. If a primary is not present
@@ -1409,7 +1411,7 @@ defmodule Ecto.Schema do
         use Ecto.Schema
 
         embedded_schema do
-          field :name
+          field :title
         end
       end
 
@@ -1554,17 +1556,17 @@ defmodule Ecto.Schema do
   ## Callbacks
 
   @doc false
-  def __timestamps__(:naive_datetime, :seconds) do
+  def __timestamps__(:naive_datetime, :second) do
     %{NaiveDateTime.utc_now() | microsecond: {0, 6}}
   end
-  def __timestamps__(:naive_datetime, :microseconds) do
+  def __timestamps__(:naive_datetime, :microsecond) do
     NaiveDateTime.utc_now()
   end
-  def __timestamps__(type, :seconds) do
-    type_to_module(type).from_unix!(System.system_time(:seconds) * 1000000, :microseconds)
+  def __timestamps__(type, :second) do
+    type_to_module(type).from_unix!(System.system_time(:second) * 1000000, :microsecond)
   end
-  def __timestamps__(type, :microseconds) do
-    type_to_module(type).from_unix!(System.system_time(:microseconds), :microseconds)
+  def __timestamps__(type, :microsecond) do
+    type_to_module(type).from_unix!(System.system_time(:microsecond), :microsecond)
   end
 
   defp type_to_module(:naive_datetime), do: NaiveDateTime
@@ -1654,9 +1656,9 @@ defmodule Ecto.Schema do
 
   @doc false
   def __field__(mod, name, type, opts) do
-    check_type!(name, type, opts[:virtual])
-    pk? = opts[:primary_key] || false
     virtual? = opts[:virtual] || false
+    check_type!(name, type, virtual?)
+    pk? = opts[:primary_key] || false
 
     default = default_for_type(type, opts)
     Module.put_attribute(mod, :changeset_fields, {name, type})
@@ -2024,7 +2026,7 @@ defmodule Ecto.Schema do
   end
 
   defp check_options!(opts, valid, fun_arity) do
-    case Enum.find(opts, fn {k, _} -> not k in valid end) do
+    case Enum.find(opts, fn {k, _} -> not(k in valid) end) do
       {k, _} ->
         raise ArgumentError, "invalid option #{inspect k} for #{fun_arity}"
       nil ->

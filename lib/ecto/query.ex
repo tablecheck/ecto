@@ -722,7 +722,7 @@ defmodule Ecto.Query do
   that should be performed on the fields. Any expression that is accepted in a
   query can be a select field.
 
-  Selelct also allows each expression to be wrapped in lists, tuples or maps as
+  Select also allows each expression to be wrapped in lists, tuples or maps as
   shown in the examples below. A full schema can also be selected.
 
   There can only be one select expression in a query, if the select expression
@@ -1245,7 +1245,7 @@ defmodule Ecto.Query do
 
   Preload also allows functions to be given. In such cases, the function
   receives the IDs to be fetched and it must return the associated data.
-  This data will then be mapped and sorted:
+  This data will then be mapped and sorted by the relationship key:
 
       comment_preloader = fn post_ids -> fetch_comments_by_post_ids(post_ids) end
       Repo.all from p in Post, preload: [comments: ^comment_preloader]

@@ -1303,7 +1303,7 @@ defmodule Ecto.Changeset do
       [title: {"cannot be foo", []}]
 
   """
-  @spec validate_change(t, atom, (atom, term -> [error])) :: t
+  @spec validate_change(t, atom, (atom, term -> [{atom, String.t} | {atom, {String.t, Keyword.t}}])) :: t
   def validate_change(%Changeset{} = changeset, field, validator) when is_atom(field) do
     %{changes: changes, errors: errors} = changeset
     ensure_field_exists!(changeset, field)
@@ -1342,7 +1342,7 @@ defmodule Ecto.Changeset do
       [title: :useless_validator]
 
   """
-  @spec validate_change(t, atom, term, (atom, term -> [error])) :: t
+  @spec validate_change(t, atom, term, (atom, term -> [{atom, String.t} | {atom, {String.t, Keyword.t}}])) :: t
   def validate_change(%Changeset{validations: validations} = changeset,
                       field, metadata, validator) do
     changeset = %{changeset | validations: [{field, metadata}|validations]}
@@ -1365,6 +1365,8 @@ defmodule Ecto.Changeset do
   ## Options
 
     * `:message` - the message on failure, defaults to "can't be blank"
+    * `:trim` - a boolean that sets whether whitespaces are removed before
+      running the validation on binaries/strings, defaults to true
 
   ## Examples
 
@@ -1376,11 +1378,12 @@ defmodule Ecto.Changeset do
   def validate_required(%Changeset{} = changeset, fields, opts \\ []) do
     %{required: required, errors: errors, changes: changes} = changeset
     message = message(opts, "can't be blank")
+    trim = Keyword.get(opts, :trim, true)
     fields = List.wrap(fields)
 
     fields_with_errors =
       for field <- fields,
-          missing?(changeset, field),
+          missing?(changeset, field, trim),
           ensure_field_exists!(changeset, field),
           is_nil(errors[field]),
           do: field
@@ -1415,10 +1418,11 @@ defmodule Ecto.Changeset do
 
       unsafe_validate_unique(changeset, [:email], repo)
       unsafe_validate_unique(changeset, [:city_name, :state_name], repo)
-      unsafe_validate_unique(changeset, [:city_name, :state_name], repo, "city must be unique within state")
+      unsafe_validate_unique(changeset, [:city_name, :state_name], repo, message: "city must be unique within state")
+      unsafe_validate_unique(changeset, [:city_name, :state_name], repo, prefix: "public")
 
   """
-  def unsafe_validate_unique(changeset, fields, repo, opts \\ []) do
+  def unsafe_validate_unique(changeset, fields, repo, opts \\ []) when is_list(opts) do
     fields = List.wrap(fields)
     {validations, struct} =
       case changeset do
@@ -1439,20 +1443,29 @@ defmodule Ecto.Changeset do
     else
       pk_pairs = pk_fields_and_values(changeset, struct)
 
+      pk_query =
+        # It should not conflict with itself for updates
+        if Enum.any?(pk_pairs, &(&1 |> elem(1) |> is_nil())) do
+          struct
+        else
+          Enum.reduce(pk_pairs, struct, fn {field, value}, acc ->
+            Ecto.Query.or_where(acc, [q], field(q, ^field) != ^value)
+          end)
+        end
+
       query =
-        struct
+        pk_query
         |> Ecto.Query.where(^where_clause)
         |> Ecto.Query.select(true)
         |> Ecto.Query.limit(1)
 
       query =
-        # It should not conflict with itself for updates
-        if Enum.any?(pk_pairs, &(&1 |> elem(1) |> is_nil())) do
+        if prefix = opts[:prefix] do
           query
+          |> Ecto.Queryable.to_query
+          |> Map.put(:prefix, prefix)
         else
-          Enum.reduce(pk_pairs, query, fn {field, value}, acc ->
-            Ecto.Query.where(acc, [q], field(q, ^field) != ^value)
-          end)
+          query
         end
 
       if repo.one(query) do
@@ -1477,20 +1490,21 @@ defmodule Ecto.Changeset do
     true
   end
 
-  defp missing?(changeset, field) when is_atom(field) do
+  defp missing?(changeset, field, trim) when is_atom(field) do
     case get_field(changeset, field) do
       %{__struct__: Ecto.Association.NotLoaded} ->
         raise ArgumentError, "attempting to validate association `#{field}` " <>
                              "that was not loaded. Please preload your associations " <>
                              "before calling validate_required/3 or pass the :required " <>
                              "option to Ecto.Changeset.cast_assoc/3"
-      value when is_binary(value) -> String.trim_leading(value) == ""
+      value when is_binary(value) and trim -> String.trim_leading(value) == ""
+      value when is_binary(value) -> value == ""
       nil -> true
       _ -> false
     end
   end
 
-  defp missing?(_changeset, field) do
+  defp missing?(_changeset, field, _trim) do
     raise ArgumentError, "validate_required/3 expects field names to be atoms, got: `#{inspect field}`"
   end
 
@@ -1554,7 +1568,7 @@ defmodule Ecto.Changeset do
   @spec validate_subset(t, atom, Enum.t, Keyword.t) :: t
   def validate_subset(changeset, field, data, opts \\ []) do
     validate_change changeset, field, {:subset, data}, fn _, value ->
-      case Enum.any?(value, fn(x) -> not x in data end) do
+      case Enum.any?(value, fn(x) -> not(x in data) end) do
         true -> [{field, {message(opts, "has an invalid entry"), [validation: :subset]}}]
         false -> []
       end

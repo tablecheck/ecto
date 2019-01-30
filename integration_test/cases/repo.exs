@@ -37,7 +37,7 @@ defmodule Ecto.Integration.RepoTest do
     assert [] = TestRepo.all from p in Post, where: p.title in ["1", "2", "3"]
     assert [] = TestRepo.all from p in Post, where: p.title in ^[]
 
-    assert [_] = TestRepo.all from p in Post, where: not p.title in []
+    assert [_] = TestRepo.all from p in Post, where: not(p.title in [])
     assert [_] = TestRepo.all from p in Post, where: p.title in ["1", "hello", "3"]
     assert [_] = TestRepo.all from p in Post, where: p.title in ["1", ^"hello", "3"]
     assert [_] = TestRepo.all from p in Post, where: p.title in ^["1", "hello", "3"]
@@ -240,7 +240,7 @@ defmodule Ecto.Integration.RepoTest do
   end
 
   test "insert and fetch a schema with utc timestamps" do
-    datetime = System.system_time(:seconds) * 1_000_000 |> DateTime.from_unix!(:microseconds)
+    datetime = System.system_time(:second) * 1_000_000 |> DateTime.from_unix!(:microsecond)
     TestRepo.insert!(%User{inserted_at: datetime})
     assert [%{inserted_at: ^datetime}] = TestRepo.all(User)
   end
@@ -564,6 +564,25 @@ defmodule Ecto.Integration.RepoTest do
     update_changeset = Post.changeset(inserted_post, %{text: "ho"})
     changeset = Ecto.Changeset.unsafe_validate_unique(update_changeset, [:title], TestRepo)
     assert changeset.errors[:title] == nil # cannot conflict with itself
+  end
+
+  test "unsafe_validate_unique/3 with composite keys" do
+    {:ok, inserted_post} = TestRepo.insert(%CompositePk{a: 123, b: 456, name: "UniqueName"})
+
+    different_pk = CompositePk.changeset(%CompositePk{}, %{name: "UniqueName", a: 789, b: 321})
+    changeset = Ecto.Changeset.unsafe_validate_unique(different_pk, [:name], TestRepo)
+    assert changeset.errors[:name] ==
+      {"has already been taken", validation: :unsafe_unique, fields: [:name]}
+
+    partial_pk = CompositePk.changeset(%CompositePk{}, %{name: "UniqueName", a: 789, b: 456})
+    changeset = Ecto.Changeset.unsafe_validate_unique(partial_pk, [:name], TestRepo)
+    assert changeset.errors[:name] ==
+           {"has already been taken", validation: :unsafe_unique, fields: [:name]}
+
+    update_changeset = CompositePk.changeset(inserted_post, %{name: "NewName"})
+    changeset = Ecto.Changeset.unsafe_validate_unique(update_changeset, [:name], TestRepo)
+    assert changeset.valid?
+    assert changeset.errors[:name] == nil # cannot conflict with itself
   end
 
   test "get(!)" do
