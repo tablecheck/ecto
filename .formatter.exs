@@ -10,6 +10,8 @@ locals_without_parens = [
   timestamps: 1,
   belongs_to: 2,
   belongs_to: 3,
+  belongs_to_many: 2,
+  belongs_to_many: 3,
   has_one: 2,
   has_one: 3,
   has_many: 2,
