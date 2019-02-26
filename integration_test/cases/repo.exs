@@ -37,7 +37,7 @@ defmodule Ecto.Integration.RepoTest do
     assert [] = TestRepo.all from p in Post, where: p.title in ["1", "2", "3"]
     assert [] = TestRepo.all from p in Post, where: p.title in ^[]
 
-    assert [_] = TestRepo.all from p in Post, where: not p.title in []
+    assert [_] = TestRepo.all from p in Post, where: not(p.title in [])
     assert [_] = TestRepo.all from p in Post, where: p.title in ["1", "hello", "3"]
     assert [_] = TestRepo.all from p in Post, where: p.title in ["1", ^"hello", "3"]
     assert [_] = TestRepo.all from p in Post, where: p.title in ^["1", "hello", "3"]
@@ -240,7 +240,7 @@ defmodule Ecto.Integration.RepoTest do
   end
 
   test "insert and fetch a schema with utc timestamps" do
-    datetime = System.system_time(:seconds) * 1_000_000 |> DateTime.from_unix!(:microseconds)
+    datetime = System.system_time(:second) * 1_000_000 |> DateTime.from_unix!(:microsecond)
     TestRepo.insert!(%User{inserted_at: datetime})
     assert [%{inserted_at: ^datetime}] = TestRepo.all(User)
   end
