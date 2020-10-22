@@ -898,6 +898,178 @@ defmodule Ecto.Schema do
   end
 
   @doc ~S"""
+  Indicates a one-to-many association with another schema.
+
+  The current schema belongs to zero or more records of the other schema.
+
+  You should use `belongs_to_many` in the table that contains the foreign key.
+  Imagine a company <-> employee relationship. If the employee contains the
+  `company_ids` in the underlying database table, we say the employee belongs to
+  many companies.
+
+  In fact, when you invoke the macro, a field with the name of foreign key is
+  automatically defined in the schema for you.
+
+  ## Options
+
+    * `:foreign_key` - Sets the foreign key field name, defaults to the name of
+      the association suffixed by `_ids`. For example,
+      `belongs_to_many :company` will define foreign key of `:company_ids`
+
+    * `:references` - Sets the key on the other schema to be used for the
+      association, defaults to: `:id`
+
+    * `:define_field` - When false, does not automatically define a
+      `:foreign_key` field, implying the user is defining the field manually
+      elsewhere
+
+    * `:type` - Sets the type of automatically define `:foreign_key`.
+      Defaults to: `{:array, :integer}` and can be set per schema via
+      `@foreign_key_type`
+
+    * `:defaults` - Default values to use when building the association
+
+    * `:primary_key` - If the underlying `belongs_to_many` field is a primary key
+
+  ## Examples
+
+      defmodule Comment do
+        use Ecto.Schema
+
+        schema "comments" do
+          belongs_to_many :post, Post
+        end
+      end
+
+      # The post can come preloaded on the comment record
+      [comment] = Repo.all(from(c in Comment, where: c.id == 42, preload: :post))
+      comment.posts => [%Post{...}, %Post{...}]
+
+  If you need custom options on the underlying field, you can define the field
+  explicitly and then pass `define_field: false` to `belongs_to_many`:
+
+      defmodule Comment do
+        use Ecto.Schema
+
+        schema "comments" do
+          field :post_ids, {:array, :integer}, ... # custom options
+          belongs_to_many, :post, Post, define_field: false
+        end
+      end
+
+  ## Polymorphic associations
+
+  One common use case for array belongs to associations is the handle
+  polymorphism. For example, imagine you have defined a Comment schema and you
+  wish to use it for commenting on both tasks and posts.
+
+  Some abstractions would force you to define some sort of polymorphic
+  association with two fields in your database:
+
+      * commentable_type
+      * commentable_id
+
+  The problem with this approach is that it breaks references in the database.
+  You can't use foreign keys and it is very inefficient, both in terms of query
+  time and storage.
+
+  In Ecto, we have two ways to solve this issue. The simplest is to define
+  multiple fields in the Comment schema, one for each association:
+
+      end
+
+  ## Polymorphic associations
+
+  One common use case for array belongs to associations is the handle
+  polymorphism. For example, imagine you have defined a Comment schema and you
+  wish to use it for commenting on both tasks and posts.
+
+  Some abstractions would force you to define some sort of polymorphic
+  association with two fields in your database:
+
+      * commentable_type
+      * commentable_id
+
+  The problem with this approach is that it breaks references in the database.
+  You can't use foreign keys and it is very inefficient, both in terms of query
+  time and storage.
+
+  In Ecto, we have two ways to solve this issue. The simplest is to define
+  multiple fields in the Comment schema, one for each association:
+
+      * task_ids
+      * post_ids
+
+  Unless you have dozens of columns, this is simpler for the developer, more DB
+  friendly and more efficient in all aspects.
+
+  Alternatively, because Ecto does not tie a schema to a given table, we can use
+  separate tables for each association. Lets start over and define a new Comment
+  schema:
+
+      defmodule Comment do
+        use Ecto.Schema
+
+        schema "abstract table: comments" do
+          # This will be used by associations on each "concrete" table
+          field :assoc_ids, {:array, :integer}
+        end
+      end
+
+  Notice we have changed the table name to "abstract table: comments". You can
+  choose whatever name you want, the point here is that this particular table
+  will never exist.
+
+  Now in your Post and Task schemas:
+
+      defmodule Post do
+        use Ecto.Schema
+        schema "posts" do
+          array_has_many :comments, {"posts_comments", Comment}, foreign_key: :assoc_ids
+        end
+      end
+
+      defmodule Task do
+        use Ecto.Schema
+
+        schema "tasks" do
+          array_has_many :comments, {"tasks_comments", Comment}, foreign_key: :assoc_ids
+        end
+      end
+
+  Now each association uses its own specific table, "posts_comments" and
+  "tasks_comments", which must be created on migrations. The advantage of this
+  approach is that we never store unrelated data together, also ensuring we keep
+  database references fast and correct.
+
+  When using this technique, the only limitation is that you cannot build
+  comments directly. For example, the command below
+
+      Repo.insert!(%Comment{})
+
+  will attempt to use the abstract table. Instead, one should use
+
+      Repo.insert!(build_assoc(post, :comments))
+
+  where `build_assoc/3` is defined in `Ecto`. You can also use `assoc/2` in both
+  `Ecto` and in the query syntax to easily retrieve associated comments to a
+  post or task:
+
+      # Fetch all comments associated with the given task
+      Repo.all(assoc(task, :comments))
+
+  Or all comments in a given table:
+
+
+      Repo.all(from(c in {"posts_comments", Comment}), ...)
+  """
+  defmacro belongs_to_many(name, queryable, opts \\ []) do
+    quote do
+      Ecto.Schema.__belongs_to_many__(__MODULE__, unquote(name), unquote(queryable), unquote(opts))
+    end
+  end
+
+  @doc ~S"""
   Indicates a many-to-many association with another schema.
 
   The association happens through a join schema or source, containing
@@ -1595,6 +1767,29 @@ defmodule Ecto.Schema do
 
     struct =
       association(mod, :one, name, Ecto.Association.BelongsTo, [queryable: queryable] ++ opts)
+    Module.put_attribute(mod, :changeset_fields, {name, {:assoc, struct}})
+  end
+
+  @valid_belongs_to_many_options [:foreign_key, :references, :define_field, :type,
+                                  :defaults, :primary_key, :on_replace]
+
+  @doc false
+  def __belongs_to_many__(mod, name, queryable, opts) do
+    check_options!(opts, @valid_belongs_to_many_options, "belongs_to_many/3")
+
+    opts = Keyword.put_new(opts, :foreign_key, :"#{name}_ids")
+    foreign_key_type = opts[:type] || Module.get_attribute(mod, :foreign_key_type)
+
+    if name == Keyword.get(opts, :foreign_key) do
+      raise ArgumentError, "foreign_key #{inspect name} must be distinct from corresponding association name"
+    end
+
+    if Keyword.get(opts, :define_field, true) do
+      __field__(mod, opts[:foreign_key], {:array, foreign_key_type}, opts)
+    end
+
+    struct =
+      association(mod, :many, name, Ecto.Association.BelongsToMany, [queryable: queryable] ++ opts)
     Module.put_attribute(mod, :changeset_fields, {name, {:assoc, struct}})
   end
 

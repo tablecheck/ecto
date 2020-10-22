@@ -822,6 +822,107 @@ defmodule Ecto.Association.BelongsTo do
   end
 end
 
+defmodule Ecto.Association.BelongsToMany do
+  @moduledoc """
+  The association struct for `belongs_to_many` associations.
+
+  Its fields are:
+
+    * `cardinality` - The association cardinality
+    * `field` - The name of the association field on the schema
+    * `owner` - The schema where the association was defined
+    * `owner_key` - The key on the `owner` schema used for the association
+    * `related` - The schema that is associated
+    * `related_key` - The key on the `related` schema used for the association
+    * `queryable` - The real query to use for querying association
+    * `defaults` - Default fields used when building the association
+    * `relationship` - The relationship to the specified schema, default is `:child`
+    * `on_replace` - The action taken on associations when schema is replaced
+  """
+
+  @behaviour Ecto.Association
+
+  @on_replace_opts [:raise, :delete, :remove, :update]
+
+  defstruct [:field, :owner, :owner_key, :related, :related_key, :queryable,
+             :on_cast, defaults: [], cardinality: :many, relationship: :child,
+             unique: true]
+
+  @doc false
+  def struct(module, name, opts) do
+    ref       = if ref = opts[:references], do: ref, else: :id
+    queryable = Keyword.fetch!(opts, :queryable)
+    related   = Ecto.Association.related_from_query(queryable)
+
+    unless is_atom(related) do
+      raise ArgumentError, "association queryable must be a schema, got: #{inspect related}"
+    end
+
+    on_replace = Keyword.get(opts, :on_replace, :raise)
+
+    unless on_replace in @on_replace_opts do
+      raise ArgumentError, "invalid `:on_replace` option for #{inspect name}. " <>
+        "The only valid options are : " <>
+        Enum.map_join(@on_replace_opts, ", ", &"`#{inspect &1}`")
+    end
+
+    %__MODULE__{
+      field: name,
+      owner: module,
+      related: related,
+      owner_key: Keyword.fetch!(opts, :foreign_key),
+      related_key: ref,
+      queryable: queryable,
+      defaults: opts[:defaults] || []
+    }
+  end
+
+  @doc false
+  def build(refl, _, attributes) do
+    refl
+    |> build()
+    |> struct(attributes)
+  end
+
+  @doc false
+  def joins_query(%{queryable: queryable, related_key: related_key,
+                    owner: owner, owner_key: owner_key}) do
+    from o in owner,
+      join: (q in ^queryable),
+      on: field(o, ^owner_key) in field(q, ^related_key)
+  end
+
+  @doc false
+  def assoc_query(%{queryable: queryable, related_key: related_key}, query, values) do
+    Enum.reduce(values, (query || queryable), fn value, query ->
+      from x in query, or_where: ^value in field(x, ^related_key)
+    end)
+  end
+
+  @doc false
+  def preload_info(%{related_key: related_key} = refl) do
+    {:assoc, refl, {0, related_key}}
+  end
+
+  @doc false
+  def on_repo_change() do
+  end
+
+  @doc false
+  def after_compile_validation(_, _) do
+    :ok
+  end
+
+  @behaviour Ecto.Changeset.Relation
+
+  @doc false
+  def build(%{related: related, queryable: queryable, defaults: defaults}) do
+    related
+    |> struct(defaults)
+    |> Ecto.Association.merge_source(queryable)
+  end
+end
+
 defmodule Ecto.Association.ManyToMany do
   @moduledoc """
   The association struct for `many_to_many` associations.
